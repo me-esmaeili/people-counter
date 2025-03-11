@@ -9,22 +9,15 @@ from ultralytics import YOLO
 
 class PeopleCounter:
     def __init__(self, source=0, model_path='bestPele.pt', show_live=True):
-        """Initialize the People Counter
 
-        Args:
-            source: Camera index, video file path, or RTSP URL
-            model_path: Path to the YOLO model file
-            show_live: Whether to display the live feed
-        """
         self.source = source
         self.model_path = model_path
         self.show_live = show_live
 
-        # Initialize video capture first to get dimensions
+
         self.initialize_capture()
 
-        # Default tracking zones in percentage coordinates (x%, y%)
-        # Format: [[x1%, y1%], [x2%, y2%], [x3%, y3%], [x4%, y4%]]
+
         self.entry_zone_percent = [[20, 40], [60, 40], [60, 50], [20, 50]]
         self.exit_zone_percent = [[20, 60], [60, 60], [60, 70], [20, 70]]
 
@@ -38,7 +31,7 @@ class PeopleCounter:
         self.count_in = 0
         self.count_out = 0
 
-        # Performance optimization: Pre-load the model
+
         self.model = self.load_model()
 
         # Batch processing parameters
@@ -67,16 +60,15 @@ class PeopleCounter:
         self.motion_roi_percent = None  # By default, use the entire frame
         self.motion_roi = None
 
-        # Debug visualization
+
         self.show_motion_mask = False  # Show motion detection visualization
 
-        # Add this to your __init__ method, near where you initialize other BG subtraction variables
+
         self.background = None
         self.alpha = 0.01  # Learning rate for background accumulation
 
     def calculate_expanded_roi(self):
-        """Calculate the expanded ROI from the union of entry and exit zones"""
-        # Combine all points from both zones
+
         all_points = np.vstack((self.entry_zone, self.exit_zone))
 
         # Find bounding box
@@ -85,13 +77,13 @@ class PeopleCounter:
         x_max = np.max(all_points[:, 0])
         y_max = np.max(all_points[:, 1])
 
-        # Calculate expansion amount (30%)
+
         width = x_max - x_min
         height = y_max - y_min
         x_expand = int(width * 0.3)
         y_expand = int(height * 0.3)
 
-        # Create expanded rectangle (ensuring we stay within frame)
+
         x_min = max(0, x_min - x_expand)
         y_min = max(0, y_min - y_expand)
         x_max = min(self.width, x_max + x_expand)
@@ -111,14 +103,7 @@ class PeopleCounter:
             [x_min_pct, y_max_pct]  # Bottom-left
         ]
     def percent_to_pixel(self, percent_coords):
-        """Convert percentage coordinates to pixel coordinates
 
-        Args:
-            percent_coords: List of [x%, y%] coordinates
-
-        Returns:
-            Numpy array of actual pixel coordinates
-        """
         if percent_coords is None:
             return None
 
@@ -174,18 +159,7 @@ class PeopleCounter:
         return cv2.resize(frame, (self.process_width, self.process_height))
 
     def calculate_foreground_mask(self, gray, bg_subtractor, background, alpha):
-        """Improved foreground detection using combined methods
 
-        Args:
-            gray: Grayscale input frame
-            bg_subtractor: Background subtractor object
-            background: Accumulated background model (or None)
-            alpha: Learning rate for background accumulation
-
-        Returns:
-            background: Updated background model
-            fg_mask: Foreground mask
-        """
         if background is None:
             background = gray.astype(float)
 
@@ -207,15 +181,7 @@ class PeopleCounter:
         return background, fg_mask
 
     def detect_motion(self, frame):
-        """Detect motion using improved background subtraction
 
-        Returns:
-            motion_mask: Binary mask of motion areas
-            has_motion: Boolean indicating if significant motion was detected
-            motion_rects: List of rectangles (x, y, w, h) around motion areas
-            motion_percent: Percentage of the frame covered by motion
-        """
-        # Apply ROI mask if specified
         if self.motion_roi is not None:
             # Create a mask for the ROI
             mask = np.zeros(frame.shape[:2], dtype=np.uint8)
@@ -491,12 +457,7 @@ class PeopleCounter:
             print(f"Person {track_id} counted as OUT")
 
     def set_zones_percent(self, entry_zone_percent=None, exit_zone_percent=None):
-        """Set custom tracking zones using percentage coordinates
 
-        Args:
-            entry_zone_percent: List of [x%, y%] coordinates for entry zone
-            exit_zone_percent: List of [x%, y%] coordinates for exit zone
-        """
         if entry_zone_percent is not None:
             self.entry_zone_percent = entry_zone_percent
             self.entry_zone = self.percent_to_pixel(entry_zone_percent)
@@ -508,11 +469,7 @@ class PeopleCounter:
         print("Tracking zones updated using percentage coordinates")
 
     def set_motion_roi(self, motion_roi_percent=None):
-        """Set region of interest for motion detection using percentage coordinates
 
-        Args:
-            motion_roi_percent: List of [x%, y%] coordinates for motion ROI
-        """
         if motion_roi_percent is not None:
             self.motion_roi_percent = motion_roi_percent
             self.motion_roi = self.percent_to_pixel(motion_roi_percent)
@@ -520,15 +477,7 @@ class PeopleCounter:
 
     def set_performance_params(self, use_resize=True, process_width=640, process_height=480,
                                frame_skip=0, batch_size=4):
-        """Set performance parameters
 
-        Args:
-            use_resize: Whether to resize frames for processing
-            process_width: Width to resize frames to
-            process_height: Height to resize frames to
-            frame_skip: Process every nth frame (0 = all frames)
-            batch_size: Number of frames to process in a batch
-        """
         self.use_resize = use_resize
         self.process_width = process_width
         self.process_height = process_height
@@ -539,17 +488,7 @@ class PeopleCounter:
 
     def set_bg_subtraction_params(self, enabled=True, history=500, threshold=16, min_area=500,
                                   motion_threshold_percent=1.0, show_mask=False, alpha=0.01):
-        """Set background subtraction parameters
 
-        Args:
-            enabled: Whether to use background subtraction
-            history: Length of history for bg subtractor
-            threshold: Threshold for bg subtractor
-            min_area: Minimum contour area to consider
-            motion_threshold_percent: Minimum percentage of frame that must show motion
-            show_mask: Whether to visualize the motion mask
-            alpha: Learning rate for background model (0-1)
-        """
         self.use_bg_subtraction = enabled
         self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(
             history=history, varThreshold=threshold, detectShadows=False)
@@ -708,13 +647,7 @@ if __name__ == "__main__":
         show_mask=True  # Show motion visualization
     )
 
-    # Optional: Define a specific ROI for motion detection
-    # counter.set_motion_roi([
-    #     [20, 20],   # Top-left
-    #     [80, 20],   # Top-right
-    #     [80, 80],   # Bottom-right
-    #     [20, 80]    # Bottom-left
-    # ])
+
 
     # Set custom zones using percentage coordinates
     counter.set_zones_percent(
