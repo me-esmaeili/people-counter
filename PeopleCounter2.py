@@ -5,6 +5,7 @@ import time
 from pathlib import Path
 import concurrent.futures
 from ultralytics import YOLO
+import platform
 
 
 class PeopleCounter:
@@ -13,10 +14,10 @@ class PeopleCounter:
         self.source = source
         self.model_path = model_path
         self.show_live = show_live
-
+        self.is_picamera = False  # Flag to track if using Picamera2
+        self.picam = None  # Will hold Picamera2 instance if on Raspberry Pi
 
         self.initialize_capture()
-
 
         self.entry_zone_percent = [[20, 40], [60, 40], [60, 50], [20, 50]]
         self.exit_zone_percent = [[20, 60], [60, 60], [60, 70], [20, 70]]
@@ -30,7 +31,6 @@ class PeopleCounter:
         self.people_in_exit = set()
         self.count_in = 0
         self.count_out = 0
-
 
         self.model = self.load_model()
 
@@ -60,15 +60,12 @@ class PeopleCounter:
         self.motion_roi_percent = None  # By default, use the entire frame
         self.motion_roi = None
 
-
         self.show_motion_mask = False  # Show motion detection visualization
-
 
         self.background = None
         self.alpha = 0.01  # Learning rate for background accumulation
 
     def calculate_expanded_roi(self):
-
         all_points = np.vstack((self.entry_zone, self.exit_zone))
 
         # Find bounding box
@@ -77,12 +74,10 @@ class PeopleCounter:
         x_max = np.max(all_points[:, 0])
         y_max = np.max(all_points[:, 1])
 
-
         width = x_max - x_min
         height = y_max - y_min
         x_expand = int(width * 0.3)
         y_expand = int(height * 0.3)
-
 
         x_min = max(0, x_min - x_expand)
         y_min = max(0, y_min - y_expand)
@@ -102,8 +97,8 @@ class PeopleCounter:
             [x_max_pct, y_max_pct],  # Bottom-right
             [x_min_pct, y_max_pct]  # Bottom-left
         ]
-    def percent_to_pixel(self, percent_coords):
 
+    def percent_to_pixel(self, percent_coords):
         if percent_coords is None:
             return None
 
@@ -116,7 +111,10 @@ class PeopleCounter:
         return np.array(pixel_coords, dtype=np.int32)
 
     def initialize_capture(self):
-        """Initialize the video source"""
+        """Initialize the video source based on platform"""
+        # Check if running on Raspberry Pi
+        is_raspberry_pi = platform.machine().startswith('arm') or platform.machine().startswith('aarch')
+
         # Check if source is a file path
         if isinstance(self.source, str) and os.path.isfile(self.source):
             self.cap = cv2.VideoCapture(self.source)
@@ -124,19 +122,71 @@ class PeopleCounter:
                 raise ValueError(f"Failed to open video file: {self.source}")
             self.fps = self.cap.get(cv2.CAP_PROP_FPS)
             self.is_file = True
+            self.is_picamera = False
+
+            # Get video dimensions
+            self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        elif is_raspberry_pi and self.source in [0, '0', '/dev/video0'] and not isinstance(self.source, str):
+            # Use Picamera2 on Raspberry Pi for camera source
+            try:
+                from picamera2 import Picamera2
+                self.picam = Picamera2()
+
+                # Configure the camera
+                config = self.picam.create_preview_configuration(
+                    main={"size": (1280, 720), "format": "RGB888"}
+                )
+                self.picam.configure(config)
+                self.picam.start()
+
+                # Set properties
+                self.width = 1280
+                self.height = 720
+                self.fps = 30  # Default FPS for live streams
+                self.is_file = False
+                self.is_picamera = True
+
+                print("Using Picamera2 on Raspberry Pi")
+            except ImportError:
+                print("Picamera2 not found, falling back to OpenCV")
+                # Fall back to OpenCV
+                self.cap = cv2.VideoCapture(self.source)
+                if not self.cap.isOpened():
+                    raise ValueError(f"Failed to open video source: {self.source}")
+                self.fps = 30  # Default FPS for live streams
+                self.is_file = False
+                self.is_picamera = False
+
+                # Get video dimensions
+                self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         else:
-            # Assume webcam or RTSP stream
+            # Use OpenCV for webcam or RTSP stream on any platform
             self.cap = cv2.VideoCapture(self.source)
             if not self.cap.isOpened():
                 raise ValueError(f"Failed to open video source: {self.source}")
             self.fps = 30  # Default FPS for live streams
             self.is_file = False
+            self.is_picamera = False
 
-        # Get video dimensions
-        self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            # Get video dimensions
+            self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
         print(f"Video source initialized: {self.width}x{self.height} at {self.fps}fps")
+
+    def capture_frame(self):
+        """Get a frame from the camera source"""
+        if self.is_picamera:
+            # Get frame from Picamera2
+            frame = self.picam.capture_array()
+            # Convert RGB to BGR (OpenCV format) if needed
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            return True, frame
+        else:
+            # Get frame from OpenCV
+            return self.cap.read()
 
     def load_model(self):
         """Load the YOLO model"""
@@ -159,7 +209,6 @@ class PeopleCounter:
         return cv2.resize(frame, (self.process_width, self.process_height))
 
     def calculate_foreground_mask(self, gray, bg_subtractor, background, alpha):
-
         if background is None:
             background = gray.astype(float)
 
@@ -181,7 +230,6 @@ class PeopleCounter:
         return background, fg_mask
 
     def detect_motion(self, frame):
-
         if self.motion_roi is not None:
             # Create a mask for the ROI
             mask = np.zeros(frame.shape[:2], dtype=np.uint8)
@@ -219,6 +267,7 @@ class PeopleCounter:
         has_motion = motion_percent >= self.motion_threshold_percent
 
         return fg_mask, has_motion, motion_rects, motion_percent
+
     def draw_motion_info(self, frame, motion_mask, motion_rects, motion_percent):
         """Draw motion information on frame"""
         # Overlay motion mask with transparency
@@ -457,7 +506,6 @@ class PeopleCounter:
             print(f"Person {track_id} counted as OUT")
 
     def set_zones_percent(self, entry_zone_percent=None, exit_zone_percent=None):
-
         if entry_zone_percent is not None:
             self.entry_zone_percent = entry_zone_percent
             self.entry_zone = self.percent_to_pixel(entry_zone_percent)
@@ -469,7 +517,6 @@ class PeopleCounter:
         print("Tracking zones updated using percentage coordinates")
 
     def set_motion_roi(self, motion_roi_percent=None):
-
         if motion_roi_percent is not None:
             self.motion_roi_percent = motion_roi_percent
             self.motion_roi = self.percent_to_pixel(motion_roi_percent)
@@ -477,7 +524,6 @@ class PeopleCounter:
 
     def set_performance_params(self, use_resize=True, process_width=640, process_height=480,
                                frame_skip=0, batch_size=4):
-
         self.use_resize = use_resize
         self.process_width = process_width
         self.process_height = process_height
@@ -488,7 +534,6 @@ class PeopleCounter:
 
     def set_bg_subtraction_params(self, enabled=True, history=500, threshold=16, min_area=500,
                                   motion_threshold_percent=1.0, show_mask=False, alpha=0.01):
-
         self.use_bg_subtraction = enabled
         self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(
             history=history, varThreshold=threshold, detectShadows=False)
@@ -499,6 +544,18 @@ class PeopleCounter:
 
         print(f"Background subtraction updated: enabled={enabled}, threshold={motion_threshold_percent}%, " +
               f"min_area={min_area}, history={history}, alpha={alpha}")
+
+    def release_resources(self):
+        """Release camera resources properly"""
+        if self.is_picamera:
+            if self.picam is not None:
+                self.picam.stop()
+                print("Picamera2 stopped")
+        else:
+            if hasattr(self, 'cap') and self.cap is not None:
+                self.cap.release()
+                print("OpenCV camera released")
+
     def run(self):
         """Run the people counter"""
         try:
@@ -516,7 +573,7 @@ class PeopleCounter:
 
             while True:
                 # Capture frame
-                ret, frame = self.cap.read()
+                ret, frame = self.capture_frame()
 
                 if not ret:
                     print("End of video stream")
@@ -608,7 +665,7 @@ class PeopleCounter:
                         cv2.waitKey(1)
 
             # Clean up
-            self.cap.release()
+            self.release_resources()
             cv2.destroyAllWindows()
             print("People counter stopped")
 
@@ -621,6 +678,7 @@ class PeopleCounter:
 
 # Example usage
 if __name__ == "__main__":
+
     # Create the counter
     counter = PeopleCounter(
         source="20231207153936_839_2.avi",  # Video file path
