@@ -88,7 +88,7 @@ class PeopleCounter:
         cv2.putText(frame, f"ID: {track_id}", (x1, y1 - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-    def run(self,video_source):
+    def start(self, video_source):
         self._setup_video_source(video_source)
         self.tracker = PeopleTracker(self.frame_height, self.config)
         """Run the people counting system"""
@@ -124,6 +124,24 @@ class PeopleCounter:
                     break
 
         self._cleanup()
+
+    def stop(self):
+        """Stop the people counting system and clean up resources"""
+        self.running = False
+        self._cleanup()
+        return {
+            'entries': self.tracker.entry_count,
+            'exits': self.tracker.exit_count,
+            'log_file': self.logger.log_filename
+        }
+
+    def get_entry_count(self):
+        """Return the current number of people who entered"""
+        return self.tracker.entry_count
+
+    def get_exit_count(self):
+        """Return the current number of people who exited"""
+        return self.tracker.exit_count
 
     def _display_debug_info(self, frame, fps):
         """Display debug information on frame"""
