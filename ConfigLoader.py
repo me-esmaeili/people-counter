@@ -12,7 +12,8 @@ class ConfigLoader:
         except FileNotFoundError:
             print(f"Config file not found: {config_path}, creating default config")
             config = {
-                "model_path": "bestpele.pt",
+                "desktop_model_path": "assets/bestpele.pt",
+                "raspi_model_path": "assets/bestPele_ncnn_model-640",
                 "video_source": 0,
                 "threshold_line_position": 0.5,
                 "debug_enabled": True,

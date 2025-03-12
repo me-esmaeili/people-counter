@@ -24,7 +24,7 @@ class PeopleCounter:
         self.frame_width, self.frame_height = self.video_source.get_dimensions()
 
         # Initialize YOLO model
-        self.model = YOLO(self.config["model_path"])
+        self.model = YOLO(self.config["desktop_model_path"])
 
         # Set threshold line position
         self.threshold_y = int(self.frame_height * self.config["threshold_line_position"])

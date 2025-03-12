@@ -1,6 +1,7 @@
 {
-    "model_path": "bestpele.pt",
-    "video_source": "20231207153936_839_2.avi",
+    "desktop_model_path": "assets/bestpele.pt",
+    "raspi_model_path": "assets/bestPele_ncnn_model-640",
+    "video_source": "assets/samples/20231207153936_839_2.avi",
     "threshold_line_position": 0.5,
     "debug_enabled": true,
     "save_debug_frames": false,
