@@ -1,0 +1,147 @@
+<!-- test.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <title>People Counter Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        button { margin: 5px; padding: 10px; }
+        #output { margin-top: 20px; padding: 10px; border: 1px solid #ccc; }
+        #status { margin-top: 20px; padding: 10px; border: 1px solid #999; }
+    </style>
+</head>
+<body>
+    <h1>People Counter Web Service Test</h1>
+
+    <div>
+        <label>Video Source: </label>
+        <input type="text" id="videoSource"
+               value="assets/samples/20231207153936_839_2.avi">
+    </div>
+
+    <button onclick="startCounter()">Start Counter</button>
+    <button onclick="stopCounter()">Stop Counter</button>
+    <button onclick="checkHealth()">Check Health</button>
+
+    <div id="status">
+        Status: <span id="running">Not Running</span><br>
+        Entries: <span id="entries">0</span><br>
+        Exits: <span id="exits">0</span>
+    </div>
+
+    <div id="output"></div>
+
+    <script>
+        const BASE_URL = 'http://localhost:5000';
+        const output = document.getElementById('output');
+        const runningSpan = document.getElementById('running');
+        const entriesSpan = document.getElementById('entries');
+        const exitsSpan = document.getElementById('exits');
+        let statusInterval = null;
+
+        function log(message) {
+            output.innerHTML += `<p>${new Date().toLocaleTimeString()} - ${message}</p>`;
+        }
+
+        async function startCounter() {
+            try {
+                const videoSource = document.getElementById('videoSource').value;
+                const response = await fetch(`${BASE_URL}/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ video_source: videoSource })
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    log(`Started successfully: ${JSON.stringify(data)}`);
+                    startStatusUpdate();
+                } else {
+                    log(`Error starting: ${data.error}`);
+                }
+            } catch (error) {
+                log(`Network error: ${error.message}`);
+            }
+        }
+
+        async function stopCounter() {
+            try {
+                const response = await fetch(`${BASE_URL}/stop`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    log(`Stopped successfully: ${JSON.stringify(data)}`);
+                    stopStatusUpdate();
+                } else {
+                    log(`Error stopping: ${data.error}`);
+                }
+            } catch (error) {
+                log(`Network error: ${error.message}`);
+            }
+        }
+
+        async function checkStatus() {
+            try {
+                const response = await fetch(`${BASE_URL}/status`);
+                const data = await response.json();
+
+                if (response.ok) {
+                    updateStatusDisplay(data);
+                } else {
+                    log(`Error checking status: ${data.error}`);
+                }
+            } catch (error) {
+                log(`Network error: ${error.message}`);
+            }
+        }
+
+        async function checkHealth() {
+            try {
+                const response = await fetch(`${BASE_URL}/health`);
+                const data = await response.json();
+
+                if (response.ok) {
+                    log(`Health: ${data.status}`);
+                } else {
+                    log(`Error checking health: ${data.error}`);
+                }
+            } catch (error) {
+                log(`Network error: ${error.message}`);
+            }
+        }
+
+        function updateStatusDisplay(data) {
+            runningSpan.textContent = data.running ? 'Running' : 'Not Running';
+            entriesSpan.textContent = data.entries;
+            exitsSpan.textContent = data.exits;
+        }
+
+        function startStatusUpdate() {
+            if (!statusInterval) {
+                statusInterval = setInterval(checkStatus, 2000); // Update every 2 seconds
+                log('Started automatic status updates');
+            }
+        }
+
+        function stopStatusUpdate() {
+            if (statusInterval) {
+                clearInterval(statusInterval);
+                statusInterval = null;
+                log('Stopped automatic status updates');
+                // Reset display to initial state
+                updateStatusDisplay({ running: false, entries: 0, exits: 0 });
+            }
+        }
+
+        // Initial check when page loads
+        checkStatus();
+    </script>
+</body>
+</html>
