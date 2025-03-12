@@ -1,28 +1,12 @@
 {
-  "source": "20231207153936_839_2.avi",
-  "model_path": "bestPele.pt",
-  "show_live": true,
-  "performance": {
-    "use_resize": true,
-    "process_width": 640,
-    "process_height": 480,
-    "frame_skip": 2,
-    "batch_size": 4
-  },
-  "background_subtraction": {
-    "enabled": true,
-    "history": 500,
-    "threshold": 16,
-    "min_area": 0.2,
-    "motion_threshold_percent": 1.0,
-    "show_mask": true,
-    "alpha": 0.01
-  },
-  "zones": {
-    "entry_zone_percent": [[15, 40], [80, 40], [80, 45], [15, 45]],
-    "exit_zone_percent": [[15, 60], [80, 60], [80, 65], [15, 65]]
-  },
-  "motion_roi": {
-    "calculate_expanded": true
-  }
+    "model_path": "bestpele.pt",
+    "video_source": "20231207153936_839_2.avi",
+    "threshold_line_position": 0.5,
+    "debug_enabled": true,
+    "save_debug_frames": false,
+    "debug_dir": "./debug_frames",
+    "log_dir": "./logs",
+    "max_disappeared": 30,
+    "direction_buffer_size": 5,
+    "max_positions": 30
 }
