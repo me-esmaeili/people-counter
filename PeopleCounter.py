@@ -5,6 +5,7 @@ from VideoSource import *
 from Logger import *
 from Visualizer import  *
 from ConfigLoader import *
+from utility import *
 
 
 class PeopleCounter:
@@ -24,7 +25,10 @@ class PeopleCounter:
         self.frame_width, self.frame_height = self.video_source.get_dimensions()
 
         # Initialize YOLO model
-        self.model = YOLO(self.config["desktop_model_path"])
+        if is_windows():
+            self.model = YOLO(self.config["desktop_model_path"])
+        elif is_raspberry_pi():
+            self.model = YOLO(self.config["raspi_model_path"])
 
         # Set threshold line position
         self.threshold_y = int(self.frame_height * self.config["threshold_line_position"])
@@ -121,7 +125,7 @@ class PeopleCounter:
                 cv2.line(debug_frame, (0, self.threshold_y), (self.frame_width, self.threshold_y), (0, 255, 0), 2)
 
             # Run YOLOv8 detection with tracking
-            results = self.model.track(frame, persist=True, classes=[0], verbose=False)  # 0 is class ID for person
+            results = self.model.track(frame,imgsz=(640,480),show=False,  persist=True, classes=[0], verbose=False)  # 0 is class ID for person
 
             # Mark all current tracks as not updated
             current_track_ids = set()
@@ -220,3 +224,6 @@ class PeopleCounter:
         if self.debug_enabled:
             cv2.destroyAllWindows()
         print(f"Counting results saved to {self.logger.log_filename}")
+
+
+
