@@ -51,7 +51,7 @@ class PeopleCounter:
                     processed_count += len(batch_frames)
                     batch_fps = len(batch_frames) / batch_time if batch_time > 0 else 0
                     fps_avg = processed_count / (time.time() - start_time_total)
-                    print(f"Batch FPS: {batch_fps:.1f}, Avg FPS: {fps_avg:.1f}")
+                    # print(f"Batch FPS: {batch_fps:.1f}, Avg FPS: {fps_avg:.1f}")
                     batch_frames = []
 
                 if self.batch_size <= 1 and self.show_live:

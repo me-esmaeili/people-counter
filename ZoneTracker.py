@@ -21,27 +21,34 @@ class ZoneTracker:
                          for x, y in percent_coords], dtype=np.int32)
 
     def track_person(self, cx, cy, track_id):
+        """Track a person's movement through zones"""
+        # Check if person is in entry zone
         in_entry = cv2.pointPolygonTest(self.entry_zone, (cx, cy), False) >= 0
         in_exit = cv2.pointPolygonTest(self.exit_zone, (cx, cy), False) >= 0
 
-        if in_entry and track_id not in self.people_in_entry:
-            self.people_in_entry.add(track_id)
-            print(f"Person {track_id} entered entry zone")
+        # Handle entry zone
+        if in_entry:
+            if track_id not in self.people_in_entry:
+                self.people_in_entry.add(track_id)
+                print(f"Person {track_id} entered entry zone")
 
+        # Handle exit zone
         if in_exit:
             if track_id not in self.people_in_exit:
                 self.people_in_exit.add(track_id)
                 print(f"Person {track_id} entered exit zone")
+
+            # If the person was previously in the entry zone, count as IN
             if track_id in self.people_in_entry:
                 self.people_in_entry.remove(track_id)
                 self.count_in += 1
                 print(f"Person {track_id} counted as IN")
 
+        # Handle transitions from exit to entry (count as OUT)
         if track_id in self.people_in_exit and in_entry:
             self.people_in_exit.remove(track_id)
             self.count_out += 1
             print(f"Person {track_id} counted as OUT")
-
     def set_zones_percent(self, entry_zone_percent=None, exit_zone_percent=None):
         if entry_zone_percent:
             self.entry_zone_percent = entry_zone_percent

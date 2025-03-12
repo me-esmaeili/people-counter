@@ -16,4 +16,4 @@ class ModelHandler:
             raise
 
     def detect(self, frame, conf=0.4, iou=0.45, persist=True):
-        return self.model.track(frame, persist=persist, conf=conf, iou=iou)
+        return self.model.track(frame, persist=persist, conf=conf, iou=iou, verbose=False)
