@@ -9,7 +9,7 @@ def main():
 
     # Create and run the people counter
     counter = PeopleCounter(args.config)
-    counter.run()
+    counter.run("assets/samples/20231207153936_839_2.avi")
 
 
 if __name__ == "__main__":

@@ -13,15 +13,15 @@ class PeopleCounter:
     def __init__(self, config_path):
         """Initialize the people counter"""
         self.config = ConfigLoader.load_config(config_path)
-        self._setup_video_source()
+
         self._setup_model()
         self.logger = Logger(self.config["log_dir"])
-        self.tracker = PeopleTracker(self.frame_height, self.config)
+
         self._setup_debug()
 
-    def _setup_video_source(self):
+    def _setup_video_source(self,video_source=0):
         """Initialize video source and dimensions"""
-        self.video_source = VideoSource(self.config["video_source"])
+        self.video_source = VideoSource(video_source)
         if not self.video_source.initialize():
             raise ValueError("Failed to initialize video source")
         self.frame_width, self.frame_height = self.video_source.get_dimensions()
@@ -88,7 +88,9 @@ class PeopleCounter:
         cv2.putText(frame, f"ID: {track_id}", (x1, y1 - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-    def run(self):
+    def run(self,video_source):
+        self._setup_video_source(video_source)
+        self.tracker = PeopleTracker(self.frame_height, self.config)
         """Run the people counting system"""
         frame_count, start_time, debug_frame_count = 0, time.time(), 0
 
