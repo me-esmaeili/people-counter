@@ -125,7 +125,7 @@ class PeopleCounter:
                 cv2.line(debug_frame, (0, self.threshold_y), (self.frame_width, self.threshold_y), (0, 255, 0), 2)
 
             # Run YOLOv8 detection with tracking
-            results = self.model.track(frame,imgsz=(640,480),show=False,  persist=True, classes=[0], verbose=False)  # 0 is class ID for person
+            results = self.model.track(frame,show=False,iou=0.5,  persist=True, classes=[0], verbose=False)  # 0 is class ID for person
 
             # Mark all current tracks as not updated
             current_track_ids = set()

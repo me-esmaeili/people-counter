@@ -23,6 +23,23 @@ class VideoSource:
                     from picamera2 import Picamera2
 
                     self.picam2 = Picamera2()
+
+                    # Configure the camera for preview
+                    self.picam2.preview_configuration.sensor.output_size = (640, 480)
+                    self.picam2.preview_configuration.sensor.bit_depth = 10
+                    self.picam2.preview_configuration.main.format = 'RGB888'
+
+                    # Configure video settings
+                    self.picam2.video_configuration.controls.FrameRate = 25.0
+                    self.picam2.video_configuration.controls.AwbEnable = True
+                    # Uncomment and set custom gains if needed
+                    # self.picam2.video_configuration.controls.ColourGains = (9, 5)
+                    self.picam2.video_configuration.controls.Contrast = 0
+                    self.picam2.video_configuration.controls.ExposureTime = 1  # in microseconds
+                    # Uncomment and set AWB mode if needed
+                    # self.picam2.video_configuration.controls.AwbMode = 'Cloudy'
+
+                    # Apply configuration
                     config = self.picam2.create_video_configuration()
                     self.picam2.configure(config)
                     self.picam2.start()
