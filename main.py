@@ -50,7 +50,7 @@ def main2():
     video_controller = PeopleCounter(config_file)
 
     # Process the first video for 5 seconds.
-    video_source = "assets/samples/20231228193350_511.avi"
+    video_source = "assets/samples/20231205155546_456.avi"
     video_controller.start(video_source)
 if __name__ == "__main__":
     # main1()
