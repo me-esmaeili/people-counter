@@ -1,161 +1,184 @@
 import cv2
-from ultralytics import YOLO
-import time
 import os
+import logging
+from my_object_counter import ObjectCounter
+from utility import get_horizontal_line_coordinates
 from VideoSource import VideoSource
-from Logger import Logger
-from ConfigLoader import ConfigLoader
-from utility import is_windows, is_raspberry_pi
-from PeopleTracker import *
+from ConfigManager import ConfigManager
+from CountLogger import  *
+
+
 class PeopleCounter:
-    """Main class for people counting system"""
+    def __init__(self, config_file):
+        self.config_manager = ConfigManager(config_file)
 
-    def __init__(self, config_path):
-        """Initialize the people counter"""
-        self.config = ConfigLoader.load_config(config_path)
 
-        self._setup_model()
-        self.logger = Logger(self.config["log_dir"])
+        self.model_config = self.config_manager.get_model_config()
+        self.video_config = self.config_manager.get_video_config()
+        self.log_config = self.config_manager.get_log_config()
 
-        self._setup_debug()
 
-    def _setup_video_source(self,video_source=0):
-        """Initialize video source and dimensions"""
-        self.video_source = VideoSource(video_source)
-        if not self.video_source.initialize():
-            raise ValueError("Failed to initialize video source")
-        self.frame_width, self.frame_height = self.video_source.get_dimensions()
+    def _init(self):
+        # Model settings
+        self.model_filename = self.model_config["model_filename"]
+        self.line_width = self.model_config["line_width"]
+        self.device = self.model_config["device"]
 
-    def _setup_model(self):
-        """Initialize YOLO model based on platform"""
-        model_path = (self.config["desktop_model_path"] if is_windows()
-                      else self.config["raspi_model_path"] if is_raspberry_pi()
-        else None)
-        if model_path:
-            self.model = YOLO(model_path)
-        else:
-            raise ValueError("Unsupported platform for model selection")
+        # Video processing settings
+        self.skip_frames = self.video_config["skip_frames"]
+        self.video_writer_codec = self.video_config["video_writer_codec"]
+        self.show = self.video_config["show"]
+        self.save_video = self.video_config["save_video"]
+        self.save_video_path = self.video_config["save_video_path"]
+        self.input_width = self.video_config["input_width"]
+        self.input_height = self.video_config["input_height"]
+        self.swap_direction = self.video_config["swap_direction"]
 
-    def _setup_debug(self):
-        """Setup debug settings"""
-        self.debug_enabled = self.config["debug_enabled"]
-        self.save_debug_frames = self.config.get("save_debug_frames", False)
-        if self.save_debug_frames:
-            self.debug_dir = self.config["debug_dir"]
-            os.makedirs(self.debug_dir, exist_ok=True)
+        # Initialize state variables
+        self.entry_count = 0
+        self.exit_count = 0
+        self.running = False
+        self.video_writer = None
+        self.counter = None
+        self.last_annotated_frame = None
+        self.source = None
 
-    def _process_detections(self, frame, debug_frame):
-        """Process YOLO detections and update tracking"""
-        results = self.model.track(frame, show=False, iou=0.5, persist=True,
-                                   classes=[0], verbose=False)
-
-        current_track_ids = set()
-        if (results[0].boxes is not None and
-                hasattr(results[0].boxes, 'id') and
-                results[0].boxes.id is not None):
-
-            boxes = results[0].boxes.xyxy.cpu().numpy()
-            track_ids = results[0].boxes.id.cpu().numpy().astype(int)
-
-            for box, track_id in zip(boxes, track_ids):
-                current_track_ids.add(track_id)
-                x1, y1, x2, y2 = box
-                center_y = int((y1 + y2) / 2)
-
-                self.tracker.update_track(track_id, center_y)
-                self.tracker.count_person(track_id, self.logger)
-
-                if self.debug_enabled:
-                    self._draw_detection(debug_frame, box, track_id)
-
-        # Update tracks not in current frame
-        self.tracker.tracks = {k: v for k, v in self.tracker.tracks.items()
-                               if k in current_track_ids or v['last_seen'] == 0}
-        self.tracker.update_disappeared()
-
-    def _draw_detection(self, frame, box, track_id):
-        """Draw detection bounding box and information"""
-        x1, y1, x2, y2 = map(int, box)
-        center_x, center_y = int((x1 + x2) / 2), int((y1 + y2) / 2)
-
-        color = (0, 0, 255)  # Red default
-        if track_id in self.tracker.counted_tracks:
-            positions = self.tracker.tracks.get(track_id, self.tracker.disappeared_tracks.get(track_id))['positions']
-            color = (0, 255, 0) if positions[0] > positions[-1] else (255, 0, 0)
-
-        cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-        cv2.circle(frame, (center_x, center_y), 5, color, -1)
-        cv2.putText(frame, f"ID: {track_id}", (x1, y1 - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-
+        # Initialize logger
+        self.logger = CSVCountLogger(log_dir=self.log_config["log_dir"], console_log=self.log_config["console_log"])
     def start(self, video_source):
-        self._setup_video_source(video_source)
-        self.tracker = PeopleTracker(self.frame_height, self.config)
-        """Run the people counting system"""
-        frame_count, start_time, debug_frame_count = 0, time.time(), 0
+        self._init()
+        # Initialize video source
+        self.source = VideoSource(video_source)
+        if not self.source.initialize():
+            raise Exception("Error reading video file")
 
-        while True:
-            ret, frame = self.video_source.read()
-            if not ret:
+        # Get video dimensions and fps
+        # w, h = self.source.get_dimensions()
+        fps = 25.0 if self.source.using_picam else self.source.cap.get(cv2.CAP_PROP_FPS)
+
+        # Calculate line coordinates for counting
+        line_points = get_horizontal_line_coordinates(self.input_width, self.input_height)
+
+        # Initialize video writer if needed
+        self._setup_video_writer(video_source,self.input_width, self.input_height, fps)
+
+        logging.getLogger("ultralytics").setLevel(logging.ERROR)
+
+
+        # Initialize object counter
+        self.counter = ObjectCounter(
+            show=self.show,
+            region=line_points,
+            model=self.model_filename,
+            line_width=self.line_width,
+            verbose = False,
+            swap_direction= self.swap_direction,
+            imgsz=(640, 480),
+            device=self.device
+
+        )
+
+        # Process video frames
+        self._process_frames()
+
+    def _setup_video_writer(self, video_source, width, height, fps):
+        """Set up video writer if saving is enabled"""
+        if self.save_video:
+            filename, extension = os.path.splitext(video_source)
+            output_filename = self.save_video_path if self.save_video_path else f"{filename}_out{extension}"
+            self.video_writer = cv2.VideoWriter(
+                output_filename,
+                cv2.VideoWriter_fourcc(*self.video_writer_codec),
+                fps,
+                (width, height)
+            )
+        else:
+            self.video_writer = None
+
+    def _process_frames(self):
+        """Process video frames with object counting"""
+        frame_count = 0
+        self.running = True
+
+        # w, h = self.source.get_dimensions()
+
+        while self.running:
+            success, frame = self.source.read()
+
+            if not success:
+                print("Video frame is empty or video processing has been completed.")
                 break
 
-            # FPS calculation
+            frame = cv2.resize(frame, (self.input_width, self.input_height))
             frame_count += 1
-            elapsed = time.time() - start_time
-            fps = frame_count / elapsed if elapsed > 1 else 0
-            if elapsed > 1:
-                frame_count, start_time = 0, time.time()
 
-            # Process frame
-            debug_frame = frame.copy() if self.debug_enabled else None
-            if self.debug_enabled:
-                cv2.line(debug_frame, (0, self.tracker.threshold_y),
-                         (self.frame_width, self.tracker.threshold_y), (0, 255, 0), 2)
+            # Process every nth frame based on skip_frames setting
+            if frame_count % (self.skip_frames + 1) == 0:
+                # Process frame with counter
+                frame = self.counter.count(frame)
+                self.last_annotated_frame = frame.copy()
 
-            self._process_detections(frame, debug_frame)
+                # Get current counts
+                current_entry_count = self.get_entry_count()
+                current_exit_count = self.get_exit_count()
 
-            # Handle debug output
-            if self.debug_enabled:
-                self._display_debug_info(debug_frame, fps)
-                if self.save_debug_frames and debug_frame_count % 30 == 0:
-                    cv2.imwrite(f"{self.debug_dir}/frame_{debug_frame_count:06d}.jpg", debug_frame)
-                debug_frame_count += 1
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
+                # Get timestamp
+                timestamp = None
+                if hasattr(self.source, "get_timestamp"):
+                    timestamp = self.source.get_timestamp()
+                else:
+                    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        self._cleanup()
+                # Check for new entries
+                if current_entry_count > self.entry_count:
+                    for _ in range(current_entry_count - self.entry_count):
+                        self.logger.log_entry(current_entry_count, current_exit_count, timestamp)
+
+                # Check for new exits
+                if current_exit_count > self.exit_count:
+                    for _ in range(current_exit_count - self.exit_count):
+                        self.logger.log_exit(current_entry_count, current_exit_count, timestamp)
+
+                # Update our counts
+                self.entry_count = current_entry_count
+                self.exit_count = current_exit_count
+
+            elif self.last_annotated_frame is not None:
+                frame = self.last_annotated_frame.copy()
+
+            # Write frame to output video if enabled
+            if self.video_writer is not None:
+                self.video_writer.write(frame)
+
+        self._cleanup_resources()
+
+    def _cleanup_resources(self):
+        """Clean up resources without altering the running flag."""
+        if self.source:
+            self.source.release()
+        if self.video_writer is not None:
+            self.video_writer.release()
+        cv2.destroyAllWindows()
 
     def stop(self):
-        """Stop the people counting system and clean up resources"""
+        """Stop processing and release resources"""
         self.running = False
-        self._cleanup()
-        return {
-            'entries': self.tracker.entry_count,
-            'exits': self.tracker.exit_count,
-            'log_file': self.logger.log_filename
-        }
+
 
     def get_entry_count(self):
-        """Return the current number of people who entered"""
-        return self.tracker.entry_count
+        """Get total entry count across all classes"""
+        total_in = 0
+        if self.counter and hasattr(self.counter, "classwise_counts"):
+            for key, value in self.counter.classwise_counts.items():
+                if value["IN"] != 0 or value["OUT"] != 0:
+                    total_in += value["IN"]
+        return total_in
 
     def get_exit_count(self):
-        """Return the current number of people who exited"""
-        return self.tracker.exit_count
-
-    def _display_debug_info(self, frame, fps):
-        """Display debug information on frame"""
-        cv2.putText(frame, f"Entries: {self.tracker.entry_count}", (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        cv2.putText(frame, f"Exits: {self.tracker.exit_count}", (10, 70),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        cv2.putText(frame, f"FPS: {fps:.1f}", (10, 110),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-        cv2.imshow("People Counter", frame)
-
-    def _cleanup(self):
-        """Release resources"""
-        self.video_source.release()
-        if self.debug_enabled:
-            cv2.destroyAllWindows()
-        print(f"Counting results saved to {self.logger.log_filename}")
+        """Get total exit count across all classes"""
+        total_out = 0
+        if self.counter and hasattr(self.counter, "classwise_counts"):
+            for key, value in self.counter.classwise_counts.items():
+                if value["IN"] != 0 or value["OUT"] != 0:
+                    total_out += value["OUT"]
+        return total_out

@@ -1,12 +1,16 @@
-{
-    "desktop_model_path": "assets/bestpele.pt",
-    "raspi_model_path": "assets/bestPele_ncnn_model-640",
-    "threshold_line_position": 0.5,
-    "debug_enabled": false,
-    "save_debug_frames": false,
-    "debug_dir": "./debug_frames",
-    "log_dir": "./logs",
-    "max_disappeared": 30,
-    "direction_buffer_size": 5,
-    "max_positions": 30
-}
+   {
+      "model_filename": "assets/bestPele_ncnn_model-640",
+      "device": "cpu",
+      "skip_frames": 2,
+      "video_writer_codec": "mp4v",
+      "show": true,
+      "input_width": 640,
+      "input_height": 480,
+      "swap_direction" : true,
+      "line_width": 2,
+      "save_video": false,
+      "save_video_path": "assets/samples/output_video.mp4",
+      "log_dir": "logs",
+      "console_log": true
+
+    }

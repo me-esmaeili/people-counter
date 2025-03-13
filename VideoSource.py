@@ -62,8 +62,10 @@ class VideoSource:
             return False
 
         # Get video dimensions
-        self.frame_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        self.frame_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        # self.frame_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        # self.frame_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        self.frame_width = 640
+        self.frame_height = 480
         return True
 
     def read(self):
