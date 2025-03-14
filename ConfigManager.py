@@ -49,6 +49,7 @@ class ConfigManager:
         """Get video processing configuration"""
         return {
             "log_dir": self.get("log_dir", "logs"),
-            "console_log": self.get("console_log", False)
+            "console_log": self.get("console_log", False),
+            "max_logs": self.get("max_logs", 10)
 
         }

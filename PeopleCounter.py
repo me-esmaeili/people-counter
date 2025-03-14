@@ -57,7 +57,9 @@ class PeopleCounter:
         self.video_files = []
 
         # Initialize logger
-        self.logger = CSVCountLogger(log_dir=self.log_config["log_dir"], console_log=self.log_config["console_log"])
+        self.logger = CSVCountLogger(log_dir=self.log_config["log_dir"],
+                                     console_log=self.log_config["console_log"],
+                                     max_logs=self.log_config["max_logs"])
 
     def start(self, video_source):
         self._init()
