@@ -40,7 +40,9 @@ class ConfigManager:
             "max_video_files": self.get("max_video_files", 5),
             "input_width": self.get("input_width", 640),
             "input_height": self.get("input_height", 480),
-            "swap_direction": self.get("swap_direction", True)
+            "swap_direction": self.get("swap_direction", True),
+            "video_write_fps": self.get("video_write_fps", 25)
+
 
 
         }
