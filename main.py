@@ -53,5 +53,5 @@ def main2():
     video_source = "assets/samples/20231205155546_456.avi"
     video_controller.start(video_source)
 if __name__ == "__main__":
-    main1()
-    # main2()
+    # main1()
+    main2()

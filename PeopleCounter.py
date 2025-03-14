@@ -18,7 +18,6 @@ class PeopleCounter:
         self.video_config = self.config_manager.get_video_config()
         self.log_config = self.config_manager.get_log_config()
 
-
     def _init(self):
         # Model settings
         self.model_filename = self.model_config["model_filename"]
@@ -36,6 +35,10 @@ class PeopleCounter:
         self.input_height = self.video_config["input_height"]
         self.swap_direction = self.video_config["swap_direction"]
 
+
+        self.video_duration = self.video_config["video_duration"]
+        self.max_video_files = self.video_config["max_video_files"]
+
         # Initialize state variables
         self.entry_count = 0
         self.exit_count = 0
@@ -46,6 +49,12 @@ class PeopleCounter:
         self.source = None
         self.frame_queue = queue.Queue(maxsize=5)  # Buffer a few frames
         self.result_queue = queue.Queue(maxsize=5)  # Buffer for processed frames
+
+        # Video writer state variables
+        self.current_video_frames = 0
+        self.frames_per_video = 0  # Will be set based on fps and duration
+        self.video_file_counter = 0
+        self.video_files = []
 
         # Initialize logger
         self.logger = CSVCountLogger(log_dir=self.log_config["log_dir"], console_log=self.log_config["console_log"])
@@ -58,13 +67,19 @@ class PeopleCounter:
             raise Exception("Error reading video file")
 
         # Get video dimensions and fps
-        fps = 25.0 if self.source.using_picam else self.source.cap.get(cv2.CAP_PROP_FPS)
+        self.fps = 25.0 if self.source.using_picam else self.source.cap.get(cv2.CAP_PROP_FPS)
+        self.frames_per_video = int(self.fps * self.video_duration)  # Calculate frames per video segment
 
         # Calculate line coordinates for counting
         line_points = get_horizontal_line_coordinates(self.input_width, self.input_height)
 
-        # Initialize video writer if needed
-        self._setup_video_writer(video_source, self.input_width, self.input_height, fps)
+        # Create output directory if it doesn't exist
+        if self.save_video and not os.path.exists(self.save_video_path):
+            os.makedirs(self.save_video_path)
+
+        # Initialize first video writer if needed
+        if self.save_video:
+            self._create_new_video_writer()
 
         logging.getLogger("ultralytics").setLevel(logging.ERROR)
 
@@ -102,19 +117,39 @@ class PeopleCounter:
 
         self._cleanup_resources()
 
-    def _setup_video_writer(self, video_source, width, height, fps):
-        """Set up video writer if saving is enabled"""
-        if self.save_video:
-            filename, extension = os.path.splitext(video_source)
-            output_filename = self.save_video_path if self.save_video_path else f"{filename}_out{extension}"
-            self.video_writer = cv2.VideoWriter(
-                output_filename,
-                cv2.VideoWriter_fourcc(*self.video_writer_codec),
-                fps,
-                (width, height)
-            )
-        else:
-            self.video_writer = None
+    def _create_new_video_writer(self):
+        """Create a new video writer with timestamp-based filename"""
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        output_filename = os.path.join(self.save_video_path, f"video_{timestamp}.mp4")
+
+        # Create new video writer
+        self.video_writer = cv2.VideoWriter(
+            output_filename,
+            cv2.VideoWriter_fourcc(*self.video_writer_codec),
+            self.fps,
+            (self.input_width, self.input_height)
+        )
+
+        # Add to list of video files
+        self.video_files.append(output_filename)
+        self.video_file_counter += 1
+        self.current_video_frames = 0
+
+        # Manage circular buffer of files
+        self._manage_video_files()
+
+        return output_filename
+
+    def _manage_video_files(self):
+        """Maintain circular buffer of video files, removing oldest when exceeding max"""
+        while len(self.video_files) > self.max_video_files:
+            oldest_file = self.video_files.pop(0)
+            try:
+                if os.path.exists(oldest_file):
+                    os.remove(oldest_file)
+                    logging.info(f"Removed oldest video file: {oldest_file}")
+            except Exception as e:
+                logging.error(f"Error removing file {oldest_file}: {str(e)}")
 
     def _capture_frames(self):
         """Thread function to capture frames"""
@@ -192,8 +227,20 @@ class PeopleCounter:
                 continue
 
             # Write frame to output video if enabled
-            if self.video_writer is not None:
+            if self.save_video and self.video_writer is not None:
+                # Write the current frame
                 self.video_writer.write(frame)
+                self.current_video_frames += 1
+
+                # Check if we need to start a new video file
+                if self.current_video_frames >= self.frames_per_video:
+                    # Close current video writer
+                    if self.video_writer is not None:
+                        self.video_writer.release()
+
+                    # Create new video writer
+                    self._create_new_video_writer()
+                    logging.info(f"Created new video file: {self.video_files[-1]}")
 
             self.result_queue.task_done()
 

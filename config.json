@@ -10,7 +10,9 @@
       "swap_direction" : true,
       "line_width": 2,
       "save_video": true,
-      "save_video_path": "assets/samples/output_video.mp4",
+      "save_video_path": "assets/samples/output",
+      "video_duration": 10,
+      "max_video_files": 4,
       "log_dir": "logs",
       "console_log": true
 

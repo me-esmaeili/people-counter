@@ -36,6 +36,8 @@ class ConfigManager:
             "draw": self.get("draw", True),
             "save_video": self.get("save_video", False),
             "save_video_path": self.get("save_video_path", ""),
+            "video_duration": self.get("video_duration", 300),
+            "max_video_files": self.get("max_video_files", 5),
             "input_width": self.get("input_width", 640),
             "input_height": self.get("input_height", 480),
             "swap_direction": self.get("swap_direction", True)
