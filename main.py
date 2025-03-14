@@ -26,7 +26,7 @@ def main1():
     video_controller = PeopleCounter(config_file)
 
     # Process the first video for 5 seconds.
-    video_source1 = "assets/samples/20231228193350_511.avi"
+    video_source1 = "assets/samples/20231207153936_839_2.avi"
     run_video(video_controller, video_source1, duration=15)
 
     print("After first video processing (5 seconds):")
@@ -37,13 +37,13 @@ def main1():
     # For example:
     # video_controller.reset_counts()  # If such a method exists.
 
-    # Process the second video for 10 seconds.
-    video_source2 = "assets/samples/20231205155546_456.avi"
-    run_video(video_controller, video_source2, duration=10)
-
-    print("After second video processing (10 seconds):")
-    print("Entry Count:", video_controller.get_entry_count())
-    print("Exit Count:", video_controller.get_exit_count())
+    # # Process the second video for 10 seconds.
+    # video_source2 = "assets/samples/20231205155546_456.avi"
+    # run_video(video_controller, video_source2, duration=10)
+    #
+    # print("After second video processing (10 seconds):")
+    # print("Entry Count:", video_controller.get_entry_count())
+    # print("Exit Count:", video_controller.get_exit_count())
 
 def main2():
     config_file = "config.json"
@@ -53,5 +53,5 @@ def main2():
     video_source = "assets/samples/20231205155546_456.avi"
     video_controller.start(video_source)
 if __name__ == "__main__":
-    # main1()
-    main2()
+    main1()
+    # main2()

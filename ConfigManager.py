@@ -33,6 +33,7 @@ class ConfigManager:
             "skip_frames": self.get("skip_frames", 2),
             "video_writer_codec": self.get("video_writer_codec", "mp4v"),
             "show": self.get("show", True),
+            "draw": self.get("draw", True),
             "save_video": self.get("save_video", False),
             "save_video_path": self.get("save_video_path", ""),
             "input_width": self.get("input_width", 640),

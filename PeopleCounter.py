@@ -1,18 +1,19 @@
 import cv2
 import os
 import logging
+import threading
+import queue
+import time
 from my_object_counter import ObjectCounter
 from utility import get_horizontal_line_coordinates
 from VideoSource import VideoSource
 from ConfigManager import ConfigManager
-from CountLogger import  *
+from CountLogger import CSVCountLogger
 
 
 class PeopleCounter:
     def __init__(self, config_file):
         self.config_manager = ConfigManager(config_file)
-
-
         self.model_config = self.config_manager.get_model_config()
         self.video_config = self.config_manager.get_video_config()
         self.log_config = self.config_manager.get_log_config()
@@ -28,6 +29,7 @@ class PeopleCounter:
         self.skip_frames = self.video_config["skip_frames"]
         self.video_writer_codec = self.video_config["video_writer_codec"]
         self.show = self.video_config["show"]
+        self.draw = self.video_config["draw"]
         self.save_video = self.video_config["save_video"]
         self.save_video_path = self.video_config["save_video_path"]
         self.input_width = self.video_config["input_width"]
@@ -42,9 +44,12 @@ class PeopleCounter:
         self.counter = None
         self.last_annotated_frame = None
         self.source = None
+        self.frame_queue = queue.Queue(maxsize=5)  # Buffer a few frames
+        self.result_queue = queue.Queue(maxsize=5)  # Buffer for processed frames
 
         # Initialize logger
         self.logger = CSVCountLogger(log_dir=self.log_config["log_dir"], console_log=self.log_config["console_log"])
+
     def start(self, video_source):
         self._init()
         # Initialize video source
@@ -53,33 +58,49 @@ class PeopleCounter:
             raise Exception("Error reading video file")
 
         # Get video dimensions and fps
-        # w, h = self.source.get_dimensions()
         fps = 25.0 if self.source.using_picam else self.source.cap.get(cv2.CAP_PROP_FPS)
 
         # Calculate line coordinates for counting
         line_points = get_horizontal_line_coordinates(self.input_width, self.input_height)
 
         # Initialize video writer if needed
-        self._setup_video_writer(video_source,self.input_width, self.input_height, fps)
+        self._setup_video_writer(video_source, self.input_width, self.input_height, fps)
 
         logging.getLogger("ultralytics").setLevel(logging.ERROR)
-
 
         # Initialize object counter
         self.counter = ObjectCounter(
             show=self.show,
+            draw=self.draw,
             region=line_points,
             model=self.model_filename,
             line_width=self.line_width,
-            verbose = False,
-            swap_direction= self.swap_direction,
+            verbose=False,
+            swap_direction=self.swap_direction,
             imgsz=(640, 480),
             device=self.device
-
         )
 
-        # Process video frames
-        self._process_frames()
+        # Start threads
+        self.running = True
+        capture_thread = threading.Thread(target=self._capture_frames)
+        process_thread = threading.Thread(target=self._process_frames)
+        output_thread = threading.Thread(target=self._output_frames)
+
+        capture_thread.daemon = True
+        process_thread.daemon = True
+        output_thread.daemon = True
+
+        capture_thread.start()
+        process_thread.start()
+        output_thread.start()
+
+        # Wait for threads to complete
+        capture_thread.join()
+        process_thread.join()
+        output_thread.join()
+
+        self._cleanup_resources()
 
     def _setup_video_writer(self, video_source, width, height, fps):
         """Set up video writer if saving is enabled"""
@@ -95,80 +116,89 @@ class PeopleCounter:
         else:
             self.video_writer = None
 
-    def capture_frames(self, frame_queue):
-        while self.running:
-            success, frame = self.source.read()
-            if not success:
-                break
-            frame = cv2.resize(frame, (self.input_width, self.input_height))
-            frame_queue.put((frame, self.source.get_timestamp() if hasattr(self.source, "get_timestamp") else None))
-
-    def _process_frames(self):
-        """Process video frames with object counting"""
+    def _capture_frames(self):
+        """Thread function to capture frames"""
         frame_count = 0
-        self.running = True
-
-        # w, h = self.source.get_dimensions()
-
         while self.running:
             success, frame = self.source.read()
-
             if not success:
-                print("Video frame is empty or video processing has been completed.")
+                self.running = False
                 break
 
             frame = cv2.resize(frame, (self.input_width, self.input_height))
+            timestamp = None
+            if hasattr(self.source, "get_timestamp"):
+                timestamp = self.source.get_timestamp()
+            else:
+                timestamp = time.time()
+
             frame_count += 1
 
-            should_process = False
+            # Determine if this frame should be processed based on skip_frames
+            should_process = self.source.isCamera() or (frame_count % (self.skip_frames + 1) == 0)
 
-            if self.source.isCamera():
-                # For camera: process every frame (no skipping)
-                should_process = True
-            else:
-                # For video files: process every nth frame based on skip_frames setting
-                should_process = (frame_count % (self.skip_frames + 1) == 0)
-
-            # Process every nth frame based on skip_frames setting
+            # Only add frames that need processing to the queue
             if should_process:
-                # Process frame with counter
-                frame = self.counter.count(frame)
-                self.last_annotated_frame = frame.copy()
+                try:
+                    self.frame_queue.put((frame, timestamp, frame_count), block=True, timeout=1)
+                except queue.Full:
+                    # If queue is full, skip this frame
+                    pass
 
-                # Get current counts
-                current_entry_count = self.get_entry_count()
-                current_exit_count = self.get_exit_count()
+    def _process_frames(self):
+        """Thread function to process frames"""
+        while self.running:
+            try:
+                frame, timestamp, frame_count = self.frame_queue.get(block=True, timeout=1)
+            except queue.Empty:
+                continue
 
-                # Get timestamp
-                timestamp = None
-                if hasattr(self.source, "get_timestamp"):
-                    timestamp = self.source.get_timestamp()
-                else:
-                    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            # Process frame with counter
+            processed_frame = self.counter.count(frame)
+            self.last_annotated_frame = processed_frame.copy()
 
-                # Log new entries
-                if current_entry_count > self.entry_count:
-                    for _ in range(current_entry_count - self.entry_count):
-                        self.logger.log_entry(current_entry_count, current_exit_count, timestamp)
+            # Get current counts
+            current_entry_count = self.get_entry_count()
+            current_exit_count = self.get_exit_count()
 
-                # Log new exits
-                if current_exit_count > self.exit_count:
-                    for _ in range(current_exit_count - self.exit_count):
-                        self.logger.log_exit(current_entry_count, current_exit_count, timestamp)
+            # Log new entries
+            if current_entry_count > self.entry_count:
+                for _ in range(current_entry_count - self.entry_count):
+                    self.logger.log_entry(current_entry_count, current_exit_count, timestamp)
 
-                # Update our counts
-                self.entry_count = current_entry_count
-                self.exit_count = current_exit_count
-            elif self.last_annotated_frame is not None:
-                frame = self.last_annotated_frame.copy()
+            # Log new exits
+            if current_exit_count > self.exit_count:
+                for _ in range(current_exit_count - self.exit_count):
+                    self.logger.log_exit(current_entry_count, current_exit_count, timestamp)
 
-                # Write frame to output video if enabled
+            # Update our counts
+            self.entry_count = current_entry_count
+            self.exit_count = current_exit_count
+
+            try:
+                self.result_queue.put((processed_frame, timestamp), block=True, timeout=1)
+            except queue.Full:
+                # If result queue is full, skip this frame output
+                pass
+
+            self.frame_queue.task_done()
+
+    def _output_frames(self):
+        """Thread function to handle frame output"""
+        while self.running:
+            try:
+                frame, timestamp = self.result_queue.get(block=True, timeout=1)
+            except queue.Empty:
+                continue
+
+            # Write frame to output video if enabled
             if self.video_writer is not None:
                 self.video_writer.write(frame)
 
-        self._cleanup_resources()
+            self.result_queue.task_done()
+
     def _cleanup_resources(self):
-        """Clean up resources without altering the running flag."""
+        """Clean up resources"""
         if self.source:
             self.source.release()
         if self.video_writer is not None:
@@ -178,7 +208,6 @@ class PeopleCounter:
     def stop(self):
         """Stop processing and release resources"""
         self.running = False
-
 
     def get_entry_count(self):
         """Get total entry count across all classes"""
