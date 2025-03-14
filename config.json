@@ -1,6 +1,6 @@
    {
       "model_filename": "assets/bestPele.pt",
-      "device": "0",
+      "device": "cpu",
       "skip_frames": 2,
       "video_writer_codec": "mp4v",
       "show": true,
@@ -16,7 +16,7 @@
       "log_dir": "logs",
       "console_log": true,
       "max_logs": 2,
-      "motion_enabled": true,
+      "motion_enabled": false,
       "min_area_percent": 1
 
     }

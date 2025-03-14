@@ -78,7 +78,7 @@ class PeopleCounter:
         self.motion_detector = MotionDetector(
             min_area_percent=self.motion_config["min_area_percent"],
 
-            debug=True
+            debug=False
         )
 
         logging.info("Motion detector initialized")
@@ -228,32 +228,32 @@ class PeopleCounter:
                     logging.info(
                         f"Motion detected ({motion_data['percent_area']:.2f}% of frame) - Processing with counter")
 
-                    # Add motion detection info to the frame
-                    cv2.putText(processed_frame,
-                                f"Motion: {motion_data['percent_area']:.2f}%",
-                                (10, processed_frame.shape[0] - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-                                (0, 255, 0), 2)
-
-                    # Draw motion contours
-                    cv2.drawContours(processed_frame, motion_data["contours"], -1, (0, 255, 0), 2)
+                    # # Add motion detection info to the frame
+                    # cv2.putText(processed_frame,
+                    #             f"Motion: {motion_data['percent_area']:.2f}%",
+                    #             (10, processed_frame.shape[0] - 10),
+                    #             cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                    #             (0, 255, 0), 2)
+                    #
+                    # # Draw motion contours
+                    # cv2.drawContours(processed_frame, motion_data["contours"], -1, (0, 255, 0), 2)
                 else:
                     # If no motion detected, just create a basic frame without running the counter
                     self.should_count = False
                     processed_frame = frame.copy()
 
-                    # Add no-motion info to the frame
-                    cv2.putText(processed_frame,
-                                f"No Motion: {motion_data['percent_area']:.2f}%",
-                                (10, processed_frame.shape[0] - 10),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-                                (0, 0, 255), 2)
+                    # # Add no-motion info to the frame
+                    # cv2.putText(processed_frame,
+                    #             f"No Motion: {motion_data['percent_area']:.2f}%",
+                    #             (10, processed_frame.shape[0] - 10),
+                    #             cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                    #             (0, 0, 255), 2)
             else:
                 # If no motion detector, always run counter
                 self.should_count = True
                 processed_frame = self.counter.count(frame)
 
-            cv2.imshow("view",processed_frame)
+            # cv2.imshow("view",processed_frame)
 
             self.last_annotated_frame = processed_frame.copy()
 
