@@ -4,11 +4,13 @@ import logging
 import threading
 import queue
 import time
+import numpy as np
 from my_object_counter import ObjectCounter
 from utility import get_horizontal_line_coordinates
 from VideoSource import VideoSource
 from ConfigManager import ConfigManager
-from CountLogger import CSVCountLogger
+from CountLogger import CountLogger
+from MotionDetector import MotionDetector
 
 
 class PeopleCounter:
@@ -17,6 +19,9 @@ class PeopleCounter:
         self.model_config = self.config_manager.get_model_config()
         self.video_config = self.config_manager.get_video_config()
         self.log_config = self.config_manager.get_log_config()
+
+        # Get motion detection config or use defaults
+        self.motion_config = self.config_manager.get_motion_config()
 
     def _init(self):
         # Model settings
@@ -34,7 +39,6 @@ class PeopleCounter:
         self.input_width = self.video_config["input_width"]
         self.input_height = self.video_config["input_height"]
         self.swap_direction = self.video_config["swap_direction"]
-
 
         self.video_duration = self.video_config["video_duration"]
         self.max_video_files = self.video_config["max_video_files"]
@@ -56,10 +60,28 @@ class PeopleCounter:
         self.video_file_counter = 0
         self.video_files = []
 
+        # Initialize motion detection
+        self.motion_detector = None
+        if self.motion_config["motion_enabled"]:
+            self._init_motion_detector()
+
         # Initialize logger
-        self.logger = CSVCountLogger(log_dir=self.log_config["log_dir"],
+        self.logger = CountLogger(log_dir=self.log_config["log_dir"],
                                      console_log=self.log_config["console_log"],
                                      max_logs=self.log_config["max_logs"])
+
+        # Flag to track if we should run the counter based on motion
+        self.should_count = False
+
+    def _init_motion_detector(self):
+        """Initialize the motion detector"""
+        self.motion_detector = MotionDetector(
+            min_area_percent=self.motion_config["min_area_percent"],
+
+            debug=True
+        )
+
+        logging.info("Motion detector initialized")
 
     def start(self, video_source):
         self._init()
@@ -190,27 +212,70 @@ class PeopleCounter:
             except queue.Empty:
                 continue
 
-            # Process frame with counter
-            processed_frame = self.counter.count(frame)
+            # First, check for motion if motion detector is enabled
+            if self.motion_detector is not None:
+                motion_detected, motion_frame, motion_data = self.motion_detector.detect(frame, timestamp)
+
+                # Only run counter if motion is detected
+                if motion_detected:
+                    # Set flag to indicate motion was detected
+                    self.should_count = True
+
+                    # Process frame with counter
+                    processed_frame = self.counter.count(frame)
+
+                    # Log the motion event
+                    logging.info(
+                        f"Motion detected ({motion_data['percent_area']:.2f}% of frame) - Processing with counter")
+
+                    # Add motion detection info to the frame
+                    cv2.putText(processed_frame,
+                                f"Motion: {motion_data['percent_area']:.2f}%",
+                                (10, processed_frame.shape[0] - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                                (0, 255, 0), 2)
+
+                    # Draw motion contours
+                    cv2.drawContours(processed_frame, motion_data["contours"], -1, (0, 255, 0), 2)
+                else:
+                    # If no motion detected, just create a basic frame without running the counter
+                    self.should_count = False
+                    processed_frame = frame.copy()
+
+                    # Add no-motion info to the frame
+                    cv2.putText(processed_frame,
+                                f"No Motion: {motion_data['percent_area']:.2f}%",
+                                (10, processed_frame.shape[0] - 10),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                                (0, 0, 255), 2)
+            else:
+                # If no motion detector, always run counter
+                self.should_count = True
+                processed_frame = self.counter.count(frame)
+
+            cv2.imshow("view",processed_frame)
+
             self.last_annotated_frame = processed_frame.copy()
 
-            # Get current counts
-            current_entry_count = self.get_entry_count()
-            current_exit_count = self.get_exit_count()
+            # Only update counts if counter was run
+            if self.should_count:
+                # Get current counts
+                current_entry_count = self.get_entry_count()
+                current_exit_count = self.get_exit_count()
 
-            # Log new entries
-            if current_entry_count > self.entry_count:
-                for _ in range(current_entry_count - self.entry_count):
-                    self.logger.log_entry(current_entry_count, current_exit_count, timestamp)
+                # Log new entries
+                if current_entry_count > self.entry_count:
+                    for _ in range(current_entry_count - self.entry_count):
+                        self.logger.log_entry(current_entry_count, current_exit_count, timestamp)
 
-            # Log new exits
-            if current_exit_count > self.exit_count:
-                for _ in range(current_exit_count - self.exit_count):
-                    self.logger.log_exit(current_entry_count, current_exit_count, timestamp)
+                # Log new exits
+                if current_exit_count > self.exit_count:
+                    for _ in range(current_exit_count - self.exit_count):
+                        self.logger.log_exit(current_entry_count, current_exit_count, timestamp)
 
-            # Update our counts
-            self.entry_count = current_entry_count
-            self.exit_count = current_exit_count
+                # Update our counts
+                self.entry_count = current_entry_count
+                self.exit_count = current_exit_count
 
             try:
                 self.result_queue.put((processed_frame, timestamp), block=True, timeout=1)

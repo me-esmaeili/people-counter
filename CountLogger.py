@@ -3,7 +3,7 @@ import csv
 import datetime
 
 
-class CSVCountLogger:
+class CountLogger:
     def __init__(self, log_dir="logs", console_log=False, max_logs=10):
         self.console_log = console_log
         self.log_dir = log_dir

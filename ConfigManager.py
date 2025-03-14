@@ -53,3 +53,10 @@ class ConfigManager:
             "max_logs": self.get("max_logs", 10)
 
         }
+    def get_motion_config(self):
+        """Get video processing configuration"""
+        return {
+            "motion_enabled": self.get("motion_enabled", True),
+            "min_area_percent": self.get("min_area_percent", 1)
+
+        }
