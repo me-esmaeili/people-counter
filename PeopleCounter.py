@@ -95,6 +95,14 @@ class PeopleCounter:
         else:
             self.video_writer = None
 
+    def capture_frames(self, frame_queue):
+        while self.running:
+            success, frame = self.source.read()
+            if not success:
+                break
+            frame = cv2.resize(frame, (self.input_width, self.input_height))
+            frame_queue.put((frame, self.source.get_timestamp() if hasattr(self.source, "get_timestamp") else None))
+
     def _process_frames(self):
         """Process video frames with object counting"""
         frame_count = 0
@@ -112,8 +120,17 @@ class PeopleCounter:
             frame = cv2.resize(frame, (self.input_width, self.input_height))
             frame_count += 1
 
+            should_process = False
+
+            if self.source.isCamera():
+                # For camera: process every frame (no skipping)
+                should_process = True
+            else:
+                # For video files: process every nth frame based on skip_frames setting
+                should_process = (frame_count % (self.skip_frames + 1) == 0)
+
             # Process every nth frame based on skip_frames setting
-            if frame_count % (self.skip_frames + 1) == 0:
+            if should_process:
                 # Process frame with counter
                 frame = self.counter.count(frame)
                 self.last_annotated_frame = frame.copy()
@@ -129,12 +146,12 @@ class PeopleCounter:
                 else:
                     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-                # Check for new entries
+                # Log new entries
                 if current_entry_count > self.entry_count:
                     for _ in range(current_entry_count - self.entry_count):
                         self.logger.log_entry(current_entry_count, current_exit_count, timestamp)
 
-                # Check for new exits
+                # Log new exits
                 if current_exit_count > self.exit_count:
                     for _ in range(current_exit_count - self.exit_count):
                         self.logger.log_exit(current_entry_count, current_exit_count, timestamp)
@@ -142,16 +159,14 @@ class PeopleCounter:
                 # Update our counts
                 self.entry_count = current_entry_count
                 self.exit_count = current_exit_count
-
             elif self.last_annotated_frame is not None:
                 frame = self.last_annotated_frame.copy()
 
-            # Write frame to output video if enabled
+                # Write frame to output video if enabled
             if self.video_writer is not None:
                 self.video_writer.write(frame)
 
         self._cleanup_resources()
-
     def _cleanup_resources(self):
         """Clean up resources without altering the running flag."""
         if self.source:

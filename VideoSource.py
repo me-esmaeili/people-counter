@@ -86,3 +86,9 @@ class VideoSource:
             self.picam2.stop()
         elif self.cap:
             self.cap.release()
+
+    def isCamera (self):
+        return       (   self.using_picam or
+            (isinstance(self.source, str) and
+             (not os.path.isfile(self.source) or self.source.isdigit())) or
+            isinstance(self.source, int))
