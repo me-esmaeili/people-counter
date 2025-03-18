@@ -1,6 +1,6 @@
    {
       "model_filename": "assets/bestPele.pt",
-      "device": "cpu",
+      "device": "0",
       "skip_frames": 2,
       "video_writer_codec": "mp4v",
       "show": true,
