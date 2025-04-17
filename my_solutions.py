@@ -83,7 +83,7 @@ class BaseSolution:
         self.names = self.model.names
 
         self.track_add_args = {  # Tracker additional arguments for advance configuration
-            k: self.CFG[k] for k in ["verbose", "iou", "conf", "device", "max_det", "half", "tracker","imgsz"]
+            k: self.CFG[k] for k in ["verbose", "iou", "conf", "device", "max_det", "half", "tracker", "imgsz"]
         }
 
         if IS_CLI and self.CFG["source"] is None:
@@ -139,7 +139,7 @@ class BaseSolution:
             >>> solution.store_tracking_history(1, [100, 200, 300, 400])
         """
         # Store tracking history
-        self.track_line = self.track_history[track_id]
+        self.track_line = self.track_history.setdefault(track_id, [])
         self.track_line.append(((box[0] + box[2]) / 2, (box[1] + box[3]) / 2))
         if len(self.track_line) > 30:
             self.track_line.pop(0)
