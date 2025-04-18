@@ -42,9 +42,6 @@ class ConfigManager:
             "input_height": self.get("input_height", 480),
             "swap_direction": self.get("swap_direction", True),
             "video_write_fps": self.get("video_write_fps", 25)
-
-
-
         }
 
     def get_log_config(self):
@@ -55,6 +52,7 @@ class ConfigManager:
             "max_logs": self.get("max_logs", 10)
 
         }
+
     def get_motion_config(self):
         """Get video processing configuration"""
         return {

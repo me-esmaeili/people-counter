@@ -37,6 +37,8 @@ class PeopleCounter:
         self.input_width = self.video_config["input_width"]
         self.input_height = self.video_config["input_height"]
         self.swap_direction = self.video_config["swap_direction"]
+        self.fps = self.video_config.get("fps", 5.0)
+        self.queue_size = self.video_config.get("queue_size", 5)  # خواندن queue size از کانفیگ
 
         self.entry_count = 0
         self.exit_count = 0
@@ -45,8 +47,8 @@ class PeopleCounter:
         self.last_annotated_frame = None
         self.source = None
 
-        self.frame_queue = queue.Queue(maxsize=5)
-        self.result_queue = queue.Queue(maxsize=5)
+        self.frame_queue = queue.Queue(maxsize=self.queue_size)
+        self.result_queue = queue.Queue(maxsize=self.queue_size)
 
         self.video_writer = None
         if self.save_video:
@@ -75,18 +77,17 @@ class PeopleCounter:
     def start(self, video_source):
         logging.info("Starting PeopleCounter with video source: %s", video_source)
         self._init()
-        self.source = VideoSource(video_source)
+        self.source = VideoSource(video_source, self.config_manager)
         if not self.source.initialize():
             logging.error("Failed to initialize video source.")
             raise Exception("Error reading video file")
         logging.info("Video source initialized.")
 
-        # تنظیم FPS برای استفاده از 15 FPS
         if self.source.using_picam:
-            self.fps = 15.0
+            self.fps = self.fps
         else:
             source_fps = self.source.cap.get(cv2.CAP_PROP_FPS)
-            self.fps = min(source_fps, 15.0) if source_fps and source_fps > 0 else 15.0
+            self.fps = min(source_fps, self.fps) if source_fps and source_fps > 0 else self.fps
 
         if self.video_writer:
             self.video_writer.set_fps(self.fps)
@@ -157,7 +158,6 @@ class PeopleCounter:
                 self.should_count = motion_detected
                 if motion_detected:
                     logging.info("Motion detected (%.2f%%) at frame %d", motion_data["percent_area"], frame_count)
-
             else:
                 self.should_count = True
 

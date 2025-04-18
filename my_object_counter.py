@@ -39,7 +39,8 @@ class ObjectCounter(BaseSolution):
 
     def count_objects(self, current_centroid, track_id, prev_position, cls):
         if prev_position is None or track_id in self.counted_ids:
-            logger.debug("Skipping track_id=%s (prev_position=%s, already_counted=%s)", track_id, prev_position, track_id in self.counted_ids)
+            logger.debug("Skipping track_id=%s (prev_position=%s, already_counted=%s)", track_id, prev_position,
+                         track_id in self.counted_ids)
             return
 
         logger.debug("Checking track_id=%s for counting", track_id)
@@ -47,11 +48,13 @@ class ObjectCounter(BaseSolution):
         if len(self.region) == 2:
             line = self.LineString(self.region)
             if line.intersects(self.LineString([prev_position, current_centroid])):
-                direction_is_horizontal = abs(self.region[0][0] - self.region[1][0]) < abs(self.region[0][1] - self.region[1][1])
+                direction_is_horizontal = abs(self.region[0][0] - self.region[1][0]) < abs(
+                    self.region[0][1] - self.region[1][1])
                 movement_positive = current_centroid[0] > prev_position[0] if direction_is_horizontal else \
-                                    current_centroid[1] > prev_position[1]
+                    current_centroid[1] > prev_position[1]
 
-                logger.debug("Line intersection detected. Horizontal: %s, Movement positive: %s", direction_is_horizontal, movement_positive)
+                logger.debug("Line intersection detected. Horizontal: %s, Movement positive: %s",
+                             direction_is_horizontal, movement_positive)
 
                 if (movement_positive and not self.swap_direction) or (not movement_positive and self.swap_direction):
                     self.in_count += 1
@@ -71,8 +74,8 @@ class ObjectCounter(BaseSolution):
                 region_height = max(p[1] for p in self.region) - min(p[1] for p in self.region)
 
                 movement_positive = (
-                    (region_width < region_height and current_centroid[0] > prev_position[0]) or
-                    (region_width >= region_height and current_centroid[1] > prev_position[1])
+                        (region_width < region_height and current_centroid[0] > prev_position[0]) or
+                        (region_width >= region_height and current_centroid[1] > prev_position[1])
                 )
 
                 logger.debug("Polygon contains point. Width: %d, Height: %d, Movement positive: %s",
@@ -109,7 +112,8 @@ class ObjectCounter(BaseSolution):
                 pt2 = tuple(map(int, self.region[i + 1]))
                 cv2.line(im, pt1, pt2, (104, 0, 123), self.line_width * 2)
             if len(self.region) > 2:
-                cv2.line(im, tuple(map(int, self.region[-1])), tuple(map(int, self.region[0])), (104, 0, 123), self.line_width * 2)
+                cv2.line(im, tuple(map(int, self.region[-1])), tuple(map(int, self.region[0])), (104, 0, 123),
+                         self.line_width * 2)
 
     def draw_box(self, im, box, label, color):
         x1, y1, x2, y2 = map(int, box)

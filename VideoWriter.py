@@ -13,7 +13,7 @@ class VideoWriter:
         self.input_height = config["input_height"]
         self.video_duration = config["video_duration"]
         self.max_video_files = config["max_video_files"]
-        self.fps = 25
+        self.fps = 10
 
         # Initialize state variables
         self.video_writer = None

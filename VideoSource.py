@@ -6,11 +6,15 @@ import platform
 class VideoSource:
     """Handles video input from different sources"""
 
-    def __init__(self, source):
+    def __init__(self, source, config):
         self.source = source
         self.cap = None
         self.using_picam = False
         self.picam2 = None
+        self.config = config
+        self.frame_width = config.get("video_width", 640)
+        self.frame_height = config.get("video_height", 480)
+        self.fps = config.get("video_fps", 25.0)
 
     def initialize(self):
         """Initialize the video source based on platform"""
@@ -25,19 +29,15 @@ class VideoSource:
                     self.picam2 = Picamera2()
 
                     # Configure the camera for preview
-                    self.picam2.preview_configuration.sensor.output_size = (640, 480)
+                    self.picam2.preview_configuration.sensor.output_size = (self.frame_width, self.frame_height)
                     self.picam2.preview_configuration.sensor.bit_depth = 10
                     self.picam2.preview_configuration.main.format = 'RGB888'
 
                     # Configure video settings
-                    self.picam2.video_configuration.controls.FrameRate = 25.0
+                    self.picam2.video_configuration.controls.FrameRate = self.fps
                     self.picam2.video_configuration.controls.AwbEnable = True
-                    # Uncomment and set custom gains if needed
-                    # self.picam2.video_configuration.controls.ColourGains = (9, 5)
                     self.picam2.video_configuration.controls.Contrast = 0
                     self.picam2.video_configuration.controls.ExposureTime = 1  # in microseconds
-                    # Uncomment and set AWB mode if needed
-                    # self.picam2.video_configuration.controls.AwbMode = 'Cloudy'
 
                     # Apply configuration
                     config = self.picam2.create_video_configuration()
@@ -61,11 +61,10 @@ class VideoSource:
             print(f"Failed to open video source: {self.source}")
             return False
 
-        # Get video dimensions
-        # self.frame_width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        # self.frame_height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        self.frame_width = 640
-        self.frame_height = 480
+        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.frame_width)
+        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.frame_height)
+        self.cap.set(cv2.CAP_PROP_FPS, self.fps)
+
         return True
 
     def read(self):
@@ -87,8 +86,10 @@ class VideoSource:
         elif self.cap:
             self.cap.release()
 
-    def isCamera (self):
-        return       (   self.using_picam or
-            (isinstance(self.source, str) and
-             (not os.path.isfile(self.source) or self.source.isdigit())) or
-            isinstance(self.source, int))
+    def isCamera(self):
+        return (
+                self.using_picam or
+                (isinstance(self.source, str) and
+                 (not os.path.isfile(self.source) or self.source.isdigit())) or
+                isinstance(self.source, int)
+        )
