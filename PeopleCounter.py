@@ -16,21 +16,21 @@ from VideoWriter import VideoWriter  # Import the new VideoWriter class
 
 class PeopleCounter:
     def __init__(self, config_file):
+        logging.info("Initializing PeopleCounter...")
         self.config_manager = ConfigManager(config_file)
         self.model_config = self.config_manager.get_model_config()
         self.video_config = self.config_manager.get_video_config()
         self.log_config = self.config_manager.get_log_config()
-
-        # Get motion detection config or use defaults
         self.motion_config = self.config_manager.get_motion_config()
+        logging.info("Configuration loaded.")
 
     def _init(self):
-        # Model settings
+        logging.info("Initializing internal components...")
+
         self.model_filename = self.model_config["model_filename"]
         self.line_width = self.model_config["line_width"]
         self.device = self.model_config["device"]
 
-        # Video processing settings
         self.skip_frames = self.video_config["skip_frames"]
         self.show = self.video_config["show"]
         self.draw = self.video_config["draw"]
@@ -39,63 +39,55 @@ class PeopleCounter:
         self.input_height = self.video_config["input_height"]
         self.swap_direction = self.video_config["swap_direction"]
 
-        # Initialize state variables
         self.entry_count = 0
         self.exit_count = 0
         self.running = False
         self.counter = None
         self.last_annotated_frame = None
         self.source = None
-        self.frame_queue = queue.Queue(maxsize=5)  # Buffer a few frames
-        self.result_queue = queue.Queue(maxsize=5)  # Buffer for processed frames
+        self.frame_queue = queue.Queue(maxsize=5)
+        self.result_queue = queue.Queue(maxsize=5)
 
-        # Initialize video writer if needed
         self.video_writer = None
         if self.save_video:
             self.video_writer = VideoWriter(self.video_config)
+            logging.info("VideoWriter initialized.")
 
-        # Initialize motion detection
         self.motion_detector = None
         if self.motion_config["motion_enabled"]:
             self._init_motion_detector()
 
-        # Initialize logger
         self.logger = CountLogger(log_dir=self.log_config["log_dir"],
                                   console_log=self.log_config["console_log"],
                                   max_logs=self.log_config["max_logs"])
-
-        # Flag to track if we should run the counter based on motion
         self.should_count = False
+        logging.info("Initialization complete.")
 
     def _init_motion_detector(self):
-        """Initialize the motion detector"""
         self.motion_detector = MotionDetector(
             min_area_percent=self.motion_config["min_area_percent"],
             debug=False
         )
-
-        logging.info("Motion detector initialized")
+        logging.info("Motion detector initialized.")
 
     def start(self, video_source):
+        logging.info("Starting PeopleCounter with video source: %s", video_source)
         self._init()
-        # Initialize video source
         self.source = VideoSource(video_source)
         if not self.source.initialize():
+            logging.error("Failed to initialize video source.")
             raise Exception("Error reading video file")
+        logging.info("Video source initialized.")
 
-        # Get video dimensions and fps
         self.fps = 25.0 if self.source.using_picam else self.source.cap.get(cv2.CAP_PROP_FPS)
 
-        # Update fps in video writer if it exists
         if self.video_writer:
             self.video_writer.set_fps(self.fps)
+            logging.info("VideoWriter FPS set to %.2f", self.fps)
 
-        # Calculate line coordinates for counting
         line_points = get_horizontal_line_coordinates(self.input_width, self.input_height)
-
         logging.getLogger("ultralytics").setLevel(logging.ERROR)
 
-        # Initialize object counter
         self.counter = ObjectCounter(
             show=self.show,
             draw=self.draw,
@@ -107,8 +99,8 @@ class PeopleCounter:
             imgsz=(640, 480),
             device=self.device
         )
+        logging.info("ObjectCounter initialized.")
 
-        # Start threads
         self.running = True
         capture_thread = threading.Thread(target=self._capture_frames)
         process_thread = threading.Thread(target=self._process_frames)
@@ -121,133 +113,111 @@ class PeopleCounter:
         capture_thread.start()
         process_thread.start()
         output_thread.start()
+        logging.info("Threads started: capture, process, output")
 
-        # Wait for threads to complete
         capture_thread.join()
         process_thread.join()
         output_thread.join()
 
         self._cleanup_resources()
+        logging.info("PeopleCounter stopped.")
 
     def _capture_frames(self):
-        """Thread function to capture frames"""
+        logging.info("Capture thread started.")
         frame_count = 0
         while self.running:
             success, frame = self.source.read()
             if not success:
+                logging.warning("Failed to read frame. Stopping...")
                 self.running = False
                 break
 
             frame = cv2.resize(frame, (self.input_width, self.input_height))
-            timestamp = None
-            if hasattr(self.source, "get_timestamp"):
-                timestamp = self.source.get_timestamp()
-            else:
-                timestamp = time.time()
-
+            timestamp = getattr(self.source, "get_timestamp", lambda: time.time())()
             frame_count += 1
 
-            # Determine if this frame should be processed based on skip_frames
             should_process = self.source.isCamera() or (frame_count % (self.skip_frames + 1) == 0)
 
-            # Only add frames that need processing to the queue
             if should_process:
                 try:
                     self.frame_queue.put((frame, timestamp, frame_count), block=True, timeout=1)
                 except queue.Full:
-                    # If queue is full, skip this frame
-                    pass
+                    logging.warning("Frame queue full, skipping frame %d", frame_count)
 
     def _process_frames(self):
-        """Thread function to process frames"""
+        logging.info("Processing thread started.")
         while self.running:
             try:
                 frame, timestamp, frame_count = self.frame_queue.get(block=True, timeout=1)
             except queue.Empty:
                 continue
 
-            # First, check for motion if motion detector is enabled
             if self.motion_detector is not None:
                 motion_detected, motion_frame, motion_data = self.motion_detector.detect(frame, timestamp)
-
-                # Only run counter if motion is detected
                 if motion_detected:
-                    # Set flag to indicate motion was detected
                     self.should_count = True
-
-                    # Process frame with counter
+                    logging.info("Motion detected (%.2f%%) at frame %d", motion_data["percent_area"], frame_count)
                     processed_frame = self.counter.count(frame)
-
-                    # Log the motion event
-                    logging.info(
-                        f"Motion detected ({motion_data['percent_area']:.2f}% of frame) - Processing with counter")
                 else:
-                    # If no motion detected, just create a basic frame without running the counter
                     self.should_count = False
                     processed_frame = frame.copy()
             else:
-                # If no motion detector, always run counter
                 self.should_count = True
                 processed_frame = self.counter.count(frame)
 
             self.last_annotated_frame = processed_frame.copy()
 
-            # Only update counts if counter was run
             if self.should_count:
-                # Get current counts
                 current_entry_count = self.get_entry_count()
                 current_exit_count = self.get_exit_count()
 
-                # Log new entries
                 if current_entry_count > self.entry_count:
                     for _ in range(current_entry_count - self.entry_count):
                         self.logger.log_entry(current_entry_count, current_exit_count, timestamp)
+                        logging.info("New entry logged. Total: %d", current_entry_count)
 
-                # Log new exits
                 if current_exit_count > self.exit_count:
                     for _ in range(current_exit_count - self.exit_count):
                         self.logger.log_exit(current_entry_count, current_exit_count, timestamp)
+                        logging.info("New exit logged. Total: %d", current_exit_count)
 
-                # Update our counts
                 self.entry_count = current_entry_count
                 self.exit_count = current_exit_count
 
             try:
                 self.result_queue.put((processed_frame, timestamp), block=True, timeout=1)
             except queue.Full:
-                # If result queue is full, skip this frame output
-                pass
+                logging.warning("Result queue full, skipping frame %d", frame_count)
 
             self.frame_queue.task_done()
 
     def _output_frames(self):
-        """Thread function to handle frame output"""
+        logging.info("Output thread started.")
         while self.running:
             try:
                 frame, timestamp = self.result_queue.get(block=True, timeout=1)
             except queue.Empty:
                 continue
 
-            # Write frame to output video if enabled
             if self.save_video and self.video_writer is not None:
                 self.video_writer.write(frame)
 
             self.result_queue.task_done()
 
     def _cleanup_resources(self):
-        """Clean up resources"""
+        logging.info("Cleaning up resources...")
         if self.source:
             self.source.release()
         if self.video_writer is not None:
             self.video_writer.release()
         cv2.destroyAllWindows()
+        logging.info("Cleanup complete.")
 
     def stop(self):
-        """Stop processing and release resources"""
+        logging.info("Stopping PeopleCounter...")
         self.running = False
 
     def get_entry_count(self):
-        """Get total entry count across all classes"""
         total_in = 0
         if self.counter and hasattr(self.counter, "classwise_counts"):
             for key, value in self.counter.classwise_counts.items():
@@ -256,7 +226,6 @@ class PeopleCounter:
         return total_in
 
     def get_exit_count(self):
-        """Get total exit count across all classes"""
         total_out = 0
         if self.counter and hasattr(self.counter, "classwise_counts"):
             for key, value in self.counter.classwise_counts.items():
