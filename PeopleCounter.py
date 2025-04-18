@@ -43,8 +43,8 @@ class PeopleCounter:
         self.counter = None
         self.last_annotated_frame = None
         self.source = None
-        self.frame_queue = queue.Queue(maxsize=10)  # افزایش ظرفیت صف
-        self.result_queue = queue.Queue(maxsize=10)  # افزایش ظرفیت صف
+        self.frame_queue = queue.Queue(maxsize=5)  # کاهش ظرفیت صف
+        self.result_queue = queue.Queue(maxsize=5)  # کاهش ظرفیت صف
 
         self.video_writer = None
         if self.video_config["save_video"]:
@@ -142,6 +142,8 @@ class PeopleCounter:
                     self.frame_queue.put((frame, timestamp, frame_count), block=False)  # تغییر به غیرمسدود
                 except queue.Full:
                     logging.warning("Frame queue full, skipping frame %d", frame_count)
+
+            time.sleep(0.03)  # اضافه کردن تأخیر برای کاهش فشار روی صف‌ها
 
     def _process_frames(self):
         logging.info("Processing thread started.")
