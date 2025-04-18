@@ -62,6 +62,10 @@ class BaseSolution:
 
     def extract_tracks(self, im0):
         LOGGER.info("Running model.track() to extract tracks")
+
+        if im0.shape[2] == 4:  # اگر تصویر 4 کاناله بود
+            im0 = cv2.cvtColor(im0, cv2.COLOR_BGRA2BGR)
+
         self.tracks = self.model.track(
             source=im0,
             persist=True,
@@ -69,6 +73,7 @@ class BaseSolution:
             **self.track_add_args
         )
 
+        # Extract tracks for OBB or object detection
         self.track_data = self.tracks[0].obb or self.tracks[0].boxes
 
         if self.track_data and self.track_data.id is not None:
