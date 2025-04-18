@@ -11,7 +11,7 @@ from VideoSource import VideoSource
 from ConfigManager import ConfigManager
 from CountLogger import CountLogger
 from MotionDetector import MotionDetector
-from VideoWriter import VideoWriter  # Import the new VideoWriter class
+from VideoWriter import VideoWriter
 
 
 class PeopleCounter:
@@ -43,8 +43,8 @@ class PeopleCounter:
         self.counter = None
         self.last_annotated_frame = None
         self.source = None
-        self.frame_queue = queue.Queue(maxsize=5)
-        self.result_queue = queue.Queue(maxsize=5)
+        self.frame_queue = queue.Queue(maxsize=10)  # افزایش ظرفیت صف
+        self.result_queue = queue.Queue(maxsize=10)  # افزایش ظرفیت صف
 
         self.video_writer = None
         if self.video_config["save_video"]:
@@ -139,7 +139,7 @@ class PeopleCounter:
 
             if should_process:
                 try:
-                    self.frame_queue.put((frame, timestamp, frame_count), block=True, timeout=1)
+                    self.frame_queue.put((frame, timestamp, frame_count), block=False)  # تغییر به غیرمسدود
                 except queue.Full:
                     logging.warning("Frame queue full, skipping frame %d", frame_count)
 
@@ -184,7 +184,7 @@ class PeopleCounter:
                 self.exit_count = current_exit_count
 
             try:
-                self.result_queue.put((processed_frame, timestamp), block=True, timeout=1)
+                self.result_queue.put((processed_frame, timestamp), block=False)  # تغییر به غیرمسدود
             except queue.Full:
                 logging.warning("Result queue full, skipping frame %d", frame_count)
 
